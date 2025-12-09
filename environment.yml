@@ -1,0 +1,16 @@
+name: piano_app
+channels:
+  - conda-forge
+  - pytorch
+dependencies:
+  - python=3.10
+  - numpy
+  - pillow
+  - pytorch
+  - torchvision
+  - pip
+  - pip:
+      - streamlit
+      - inference      # Roboflow Inference
+      - opencv-python  # for image handling
+      - supervision    # if you use supervision for box & label annotation
