@@ -118,6 +118,7 @@ if uploaded:
     st.subheader("Detected Keyboard")
     st.image(annotated)
 
+
     crop = img[int(y1):int(y2), int(x1):int(x2)]
     st.subheader("Cropped Keyboard")
     st.image(crop)

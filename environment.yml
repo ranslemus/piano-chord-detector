@@ -4,7 +4,7 @@ channels:
   - pytorch
 dependencies:
   - python=3.10
-  - numpy=1.26.4        # compatible with torch
+  - numpy=1.26.4 
   - pillow=11.3.0
   - pytorch=2.1.0
   - torchvision=0.16.0
