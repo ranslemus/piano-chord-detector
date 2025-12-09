@@ -11,6 +11,8 @@ import supervision as sv
 import torch.nn as nn
 from torch import Tensor
 
+from chord_predictor import predict_chord, get_note_name
+
 class PianoModelBlock2D(nn.Module):
     def __init__(self, in_dim, out_dim, ksize=(3,3), stride=(1,1), drop=0.0, pad=True):
         super().__init__()
@@ -72,6 +74,10 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 model = torch.load("model/final_model.pt", map_location=device, weights_only=False)
 model.eval()
 
+# model = PianoModelSmall2D(input_size=(480, 640)).to(device)
+# model.load_state_dict(torch.load("model\model_epoch4_step56000.pth", map_location=device))
+# model.eval()
+
 to_tensor = transforms.Compose([
     transforms.Grayscale(num_output_channels=1),
     transforms.Resize((480,640)),
@@ -79,15 +85,11 @@ to_tensor = transforms.Compose([
     transforms.Normalize([0.5],[0.5])
 ])
 
-# Initialize Roboflow Instant HTTP client
 client = InferenceHTTPClient(
     api_url="https://serverless.roboflow.com",
     api_key=ROBOFLOW_API_KEY
 )
 
-# ------------------------------
-# STREAMLIT UI
-# ------------------------------
 st.title("🎹 Piano Keyboard + Chord Prediction")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg","jpeg","png"])
@@ -98,7 +100,6 @@ if uploaded:
     img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
     st.image(img, caption="Original Image", width=600)
 
-    # ===== Roboflow Instant Detection =====
     with st.spinner("Detecting keyboard..."):
         results = client.infer(img_bgr, model_id=ROBOFLOW_MODEL_ID)
         dets = sv.Detections.from_inference(results)
@@ -108,10 +109,8 @@ if uploaded:
         st.error("No keyboard detected")
         st.stop()
 
-    # Use first detection
     x1, y1, x2, y2 = dets.xyxy[0]
 
-    # Annotate detection
     box_annot = sv.BoxAnnotator()
     label_annot = sv.LabelAnnotator()
     annotated = box_annot.annotate(img.copy(), dets)
@@ -119,36 +118,38 @@ if uploaded:
     st.subheader("Detected Keyboard")
     st.image(annotated)
 
-    # ===== Crop keyboard =====
     crop = img[int(y1):int(y2), int(x1):int(x2)]
     st.subheader("Cropped Keyboard")
     st.image(crop)
 
-    # ===== CNN prediction =====
     with st.spinner("Predicting chord..."):
         crop_tensor = to_tensor(Image.fromarray(crop)).unsqueeze(0).to(device)
         with torch.no_grad():
             output = model(crop_tensor)[0].cpu().numpy()
 
-    # Top 5 notes
     top_notes = np.argsort(output)[-3:][::-1]
     st.success(f"Top Predicted Notes: {top_notes.tolist()}")
-    st.success(f"Chord: ")
+    predicted_chord, score = predict_chord(top_notes.tolist())
+    note_indices = top_notes.tolist()
+    note_names = [get_note_name(idx) for idx in note_indices]
     
-    # other notes
+    st.write(f"Indices: {note_indices}")
+    st.write(f"Note Names: {note_names}")
+
+    st.success(f"**Predicted Chord: {predicted_chord}** (Score: {score:.2f})")
+    
     other_notes = np.argsort(output)[-10:][::-1]
     st.subheader("Other Top 10 Notes")
     st.write(other_notes.tolist())
 
-    # Final annotation with notes
     cv2.putText(
         annotated,
         f"Top notes: {top_notes.tolist()}",
         (int(x1), int(y1)-12),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.7,
+        3,
         (0,0,255),
-        2
+        9
     )
     st.subheader("Final Annotated Image")
     st.image(annotated)
