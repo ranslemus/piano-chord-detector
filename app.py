@@ -1,89 +1,30 @@
 import streamlit as st
 import cv2
-import numpy as np
 from PIL import Image
-import torch
-from torchvision import transforms
+import numpy as np
+import onnxruntime as ort
 
 from inference_sdk import InferenceHTTPClient
 import supervision as sv
 
-import torch.nn as nn
-from torch import Tensor
-
 from chord_predictor import predict_chord, get_note_name
-
-class PianoModelBlock2D(nn.Module):
-    def __init__(self, in_dim, out_dim, ksize=(3,3), stride=(1,1), drop=0.0, pad=True):
-        super().__init__()
-        padding = (ksize[0]//2, ksize[1]//2) if pad else (0,0)
-        self.main = nn.Sequential(
-            nn.Conv2d(in_dim, out_dim, kernel_size=1, stride=1, bias=False),
-            nn.BatchNorm2d(out_dim),
-            nn.LeakyReLU(inplace=True),
-            nn.Conv2d(out_dim, out_dim, kernel_size=ksize, stride=stride, padding=padding, bias=False),
-            nn.BatchNorm2d(out_dim),
-            nn.LeakyReLU(inplace=True),
-            nn.Dropout(p=drop),
-            nn.Conv2d(out_dim, out_dim, kernel_size=1, bias=False),
-            nn.BatchNorm2d(out_dim)
-        )
-        self.relu = nn.LeakyReLU(inplace=True)
-        self.downsample = nn.Sequential(
-            nn.Conv2d(in_dim, out_dim, kernel_size=ksize, stride=stride, padding=padding, bias=False),
-            nn.BatchNorm2d(out_dim)
-        )
-
-    def forward(self, x: Tensor):
-        return self.relu(self.main(x) + self.downsample(x))
-
-class PianoModelSmall2D(nn.Module):
-    def __init__(self, input_size=(480,640)):
-        super().__init__()
-        downscale_dim_sizes = [32,32,64,128,128,256]
-        self.preprocess = nn.Sequential(
-            nn.Conv2d(1, downscale_dim_sizes[0], kernel_size=3, padding=1),
-            nn.BatchNorm2d(downscale_dim_sizes[0]),
-            nn.LeakyReLU(inplace=True)
-        )
-        self.blocks = nn.ModuleList([
-            PianoModelBlock2D(downscale_dim_sizes[0], downscale_dim_sizes[1], stride=2, drop=0.2),
-            PianoModelBlock2D(downscale_dim_sizes[1], downscale_dim_sizes[2], stride=2, drop=0.2),
-            PianoModelBlock2D(downscale_dim_sizes[2], downscale_dim_sizes[3], stride=(2,1), drop=0.2),
-            PianoModelBlock2D(downscale_dim_sizes[3], downscale_dim_sizes[4], stride=(2,1), drop=0.2),
-            PianoModelBlock2D(downscale_dim_sizes[4], downscale_dim_sizes[5], stride=(2,1), drop=0.0)
-        ])
-        final_conv_dim = 256
-        self.final_conv = nn.Conv1d(downscale_dim_sizes[-1], final_conv_dim, kernel_size=3, padding=1)
-        self.fc = nn.Linear((input_size[1]//4)*final_conv_dim, 88)
-
-    def forward(self, x: Tensor):
-        x = self.preprocess(x)
-        for block in self.blocks:
-            x = block(x)
-        x = x.mean(dim=2)
-        x = self.final_conv(x)
-        x = x.flatten(1)
-        x = self.fc(x)
-        return x
 
 ROBOFLOW_API_KEY = "3gMW5qTE5AmGJLpbANtd"
 ROBOFLOW_MODEL_ID = "rechordnizer/my-first-project-9jrfe-instant-1"
-device = "cuda" if torch.cuda.is_available() else "cpu"
 
-model = torch.load("model/final_model.pt", map_location=device, weights_only=False)
-model.eval()
+# Use GPU if available
+providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+ort_session = ort.InferenceSession("model/final_model.onnx", providers=providers)
 
-# model = PianoModelSmall2D(input_size=(480, 640)).to(device)
-# model.load_state_dict(torch.load("model\model_epoch4_step56000.pth", map_location=device))
-# model.eval()
-
-to_tensor = transforms.Compose([
-    transforms.Grayscale(num_output_channels=1),
-    transforms.Resize((480,640)),
-    transforms.ToTensor(),
-    transforms.Normalize([0.5],[0.5])
-])
+# Preprocessing function
+def preprocess_image(crop_img):
+    crop_img = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
+    crop_img = cv2.resize(crop_img, (640, 480))
+    crop_img = crop_img.astype(np.float32) / 255.0
+    crop_img = (crop_img - 0.5) / 0.5  # normalize same as PyTorch
+    crop_img = np.expand_dims(crop_img, axis=0)  # C,H,W
+    crop_img = np.expand_dims(crop_img, axis=0)  # batch
+    return crop_img
 
 client = InferenceHTTPClient(
     api_url="https://serverless.roboflow.com",
@@ -91,7 +32,6 @@ client = InferenceHTTPClient(
 )
 
 st.title("🎹 Piano Keyboard + Chord Prediction")
-
 uploaded = st.file_uploader("Upload an image", type=["jpg","jpeg","png"])
 
 if uploaded:
@@ -122,12 +62,10 @@ if uploaded:
     # Safe cropping
     h, w = img.shape[:2]
     EXTENSION_PIXELS = 50
-
     x1 = max(0, int(x1))
     y1 = max(0, int(y1))
     x2 = min(w, int(x2) + EXTENSION_PIXELS)
     y2 = min(h, int(y2))
-
     crop = img[y1:y2, x1:x2]
 
     if crop.size == 0:
@@ -137,35 +75,11 @@ if uploaded:
     st.subheader("Cropped Keyboard")
     st.image(crop)
 
-    # ------- BULLETPROOF CROP → TENSOR -------- #
-
-    # Fix dtype
-    crop = crop.astype("uint8")
-
-    # Fix grayscale or single-channel crops
-    if crop.ndim == 2:
-        crop = np.stack([crop] * 3, axis=-1)
-    elif crop.ndim == 3 and crop.shape[2] == 1:
-        crop = np.concatenate([crop] * 3, axis=-1)
-
-    # Remove alpha channel if exists
-    if crop.ndim == 3 and crop.shape[2] > 3:
-        crop = crop[:, :, :3]
-
-    # Make sure shape is valid before PIL
-    h2, w2 = crop.shape[:2]
-    if h2 == 0 or w2 == 0:
-        st.error("Crop resulted in an invalid image size.")
-        st.stop()
-
-    crop_pil = Image.fromarray(crop, mode="RGB")
-
-    # ------------------------------------------ #
+    # Preprocess for ONNX
+    crop_input = preprocess_image(crop)
 
     with st.spinner("Predicting chord..."):
-        crop_tensor = to_tensor(crop_pil).unsqueeze(0).to(device)
-        with torch.no_grad():
-            output = model(crop_tensor)[0].cpu().numpy()
+        output = ort_session.run(None, {"input": crop_input})[0][0]
 
     top_notes = np.argsort(output)[-3:][::-1]
     st.success(f"Top Predicted Notes: {top_notes.tolist()}")
@@ -194,4 +108,3 @@ if uploaded:
 
     st.subheader("Final Annotated Image")
     st.image(annotated)
-

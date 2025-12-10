@@ -1,8 +1,7 @@
-numpy>=1.25.0,<2.0
-torch==2.1.0
-torchvision==0.16.0
-pillow==11.3.0
-opencv-python-headless==4.10.0.84
-supervision==0.27.0
-streamlit==1.52.1
-inference-sdk==0.62.2
+streamlit==1.28.0
+opencv-python==4.8.0.74
+Pillow==10.0.1
+numpy==1.26.0
+onnxruntime-gpu==1.17.0    # Use GPU, switch to onnxruntime==1.17.0 if CPU only
+inference-sdk==0.2.7
+supervision==0.2.4
