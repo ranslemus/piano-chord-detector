@@ -2,6 +2,6 @@ streamlit==1.28.0
 opencv-python==4.8.0.74
 Pillow==10.0.1
 numpy==1.26.0
-onnxruntime-gpu==1.17.0    # Use GPU, switch to onnxruntime==1.17.0 if CPU only
-inference-sdk==0.2.7
+onnxruntime-gpu==1.17.0
+inference-sdk==0.62.2
 supervision==0.2.4
