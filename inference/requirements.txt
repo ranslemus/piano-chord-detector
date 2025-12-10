@@ -1,8 +1,6 @@
-fastapi==0.109.1
-uvicorn[standard]==0.24.1
+onnxruntime
 numpy
 opencv-python
-onnxruntime-gpu
+Pillow
 inference-sdk
 supervision
-Pillow

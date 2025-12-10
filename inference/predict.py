@@ -1,6 +1,3 @@
-# main.py
-import os
-from fastapi import FastAPI, UploadFile, File
 import numpy as np
 import cv2
 from PIL import Image
@@ -8,15 +5,15 @@ import onnxruntime as ort
 from inference_sdk import InferenceHTTPClient
 import supervision as sv
 from chord_predictor import predict_chord, get_note_name
+from io import BytesIO
 
-app = FastAPI()
-
-providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+# Load model and Roboflow client globally
+providers = ["CPUExecutionProvider"]  # GPU not supported on Vercel
 ort_session = ort.InferenceSession("model/final_model.onnx", providers=providers)
 
+import os
 ROBOFLOW_API_KEY = os.environ.get("ROBOFLOW_API_KEY")
 ROBOFLOW_MODEL_ID = os.environ.get("ROBOFLOW_MODEL_ID")
-
 client = InferenceHTTPClient(api_url="https://serverless.roboflow.com", api_key=ROBOFLOW_API_KEY)
 
 def preprocess_image(crop_img):
@@ -28,12 +25,16 @@ def preprocess_image(crop_img):
     crop_img = np.expand_dims(crop_img, axis=0)
     return crop_img
 
-@app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-    pil_img = Image.open(file.file).convert("RGB")
+# Vercel serverless handler
+async def handler(request):
+    # Read file from multipart form
+    form = await request.form()
+    upload = form["file"].file
+    pil_img = Image.open(BytesIO(upload.read())).convert("RGB")
     img = np.array(pil_img)
     img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
+    # Roboflow detection
     results = client.infer(img_bgr, model_id=ROBOFLOW_MODEL_ID)
     dets = sv.Detections.from_inference(results)
     dets = dets[dets.confidence > 0.95]
