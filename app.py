@@ -119,12 +119,27 @@ if uploaded:
     st.image(annotated)
 
 
-    crop = img[int(y1):int(y2), int(x1):int(x2)]
+    # Get image dimensions
+    h, w = img.shape[:2]
+    EXTENSION_PIXELS = 50 
+
+    x1 = max(0, int(x1))
+    y1 = max(0, int(y1))
+    extended_x2 = int(x2) + EXTENSION_PIXELS
+    x2 = min(w, extended_x2)
+    y2 = min(h, int(y2))
+    crop = img[y1:y2, x1:x2]
+
+    if crop.size == 0:
+        st.error("Detected box is empty or invalid. Cannot crop image.")
+        st.stop()
+
     st.subheader("Cropped Keyboard")
     st.image(crop)
 
     with st.spinner("Predicting chord..."):
-        crop_tensor = to_tensor(Image.fromarray(crop)).unsqueeze(0).to(device)
+        crop_pil = Image.fromarray(crop)
+        crop_tensor = to_tensor(crop_pil).unsqueeze(0).to(device)
         with torch.no_grad():
             output = model(crop_tensor)[0].cpu().numpy()
 
@@ -148,9 +163,9 @@ if uploaded:
         f"Top notes: {top_notes.tolist()}",
         (int(x1), int(y1)-12),
         cv2.FONT_HERSHEY_SIMPLEX,
-        3,
+        1,
         (0,0,255),
-        9
+        3
     )
     st.subheader("Final Annotated Image")
     st.image(annotated)
