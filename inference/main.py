@@ -11,11 +11,9 @@ from chord_predictor import predict_chord, get_note_name
 
 app = FastAPI()
 
-# Setup ONNX session
 providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
 ort_session = ort.InferenceSession("model/final_model.onnx", providers=providers)
 
-# Read API keys from environment
 ROBOFLOW_API_KEY = os.environ.get("ROBOFLOW_API_KEY")
 ROBOFLOW_MODEL_ID = os.environ.get("ROBOFLOW_MODEL_ID")
 
