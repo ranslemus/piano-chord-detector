@@ -111,6 +111,7 @@ if uploaded:
 
     x1, y1, x2, y2 = dets.xyxy[0]
 
+    # Draw annotations
     box_annot = sv.BoxAnnotator()
     label_annot = sv.LabelAnnotator()
     annotated = box_annot.annotate(img.copy(), dets)
@@ -118,16 +119,15 @@ if uploaded:
     st.subheader("Detected Keyboard")
     st.image(annotated)
 
-
-    # Get image dimensions
+    # Safe cropping
     h, w = img.shape[:2]
-    EXTENSION_PIXELS = 50 
+    EXTENSION_PIXELS = 50
 
     x1 = max(0, int(x1))
     y1 = max(0, int(y1))
-    extended_x2 = int(x2) + EXTENSION_PIXELS
-    x2 = min(w, extended_x2)
+    x2 = min(w, int(x2) + EXTENSION_PIXELS)
     y2 = min(h, int(y2))
+
     crop = img[y1:y2, x1:x2]
 
     if crop.size == 0:
@@ -137,23 +137,47 @@ if uploaded:
     st.subheader("Cropped Keyboard")
     st.image(crop)
 
+    # ------- BULLETPROOF CROP → TENSOR -------- #
+
+    # Fix dtype
+    crop = crop.astype("uint8")
+
+    # Fix grayscale or single-channel crops
+    if crop.ndim == 2:
+        crop = np.stack([crop] * 3, axis=-1)
+    elif crop.ndim == 3 and crop.shape[2] == 1:
+        crop = np.concatenate([crop] * 3, axis=-1)
+
+    # Remove alpha channel if exists
+    if crop.ndim == 3 and crop.shape[2] > 3:
+        crop = crop[:, :, :3]
+
+    # Make sure shape is valid before PIL
+    h2, w2 = crop.shape[:2]
+    if h2 == 0 or w2 == 0:
+        st.error("Crop resulted in an invalid image size.")
+        st.stop()
+
+    crop_pil = Image.fromarray(crop, mode="RGB")
+
+    # ------------------------------------------ #
+
     with st.spinner("Predicting chord..."):
-        crop_pil = Image.fromarray(crop)
         crop_tensor = to_tensor(crop_pil).unsqueeze(0).to(device)
         with torch.no_grad():
             output = model(crop_tensor)[0].cpu().numpy()
 
     top_notes = np.argsort(output)[-3:][::-1]
     st.success(f"Top Predicted Notes: {top_notes.tolist()}")
+
     predicted_chord, score = predict_chord(top_notes.tolist())
     note_indices = top_notes.tolist()
     note_names = [get_note_name(idx) for idx in note_indices]
-    
+
     st.write(f"Indices: {note_indices}")
     st.write(f"Note Names: {note_names}")
-
     st.success(f"**Predicted Chord: {predicted_chord}** (Score: {score:.2f})")
-    
+
     other_notes = np.argsort(output)[-10:][::-1]
     st.subheader("Other Top 10 Notes")
     st.write(other_notes.tolist())
@@ -161,11 +185,13 @@ if uploaded:
     cv2.putText(
         annotated,
         f"Top notes: {top_notes.tolist()}",
-        (int(x1), int(y1)-12),
+        (int(x1), int(y1) - 12),
         cv2.FONT_HERSHEY_SIMPLEX,
         1,
-        (0,0,255),
+        (0, 0, 255),
         3
     )
+
     st.subheader("Final Annotated Image")
     st.image(annotated)
+
