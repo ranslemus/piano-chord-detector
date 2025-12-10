@@ -1,4 +1,5 @@
 # main.py
+import os
 from fastapi import FastAPI, UploadFile, File
 import numpy as np
 import cv2
@@ -14,12 +15,12 @@ app = FastAPI()
 providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
 ort_session = ort.InferenceSession("model/final_model.onnx", providers=providers)
 
-# Setup Roboflow client
-ROBOFLOW_API_KEY = "3gMW5qTE5AmGJLpbANtd"
-ROBOFLOW_MODEL_ID = "rechordnizer/my-first-project-9jrfe-instant-1"
+# Read API keys from environment
+ROBOFLOW_API_KEY = os.environ.get("ROBOFLOW_API_KEY")
+ROBOFLOW_MODEL_ID = os.environ.get("ROBOFLOW_MODEL_ID")
+
 client = InferenceHTTPClient(api_url="https://serverless.roboflow.com", api_key=ROBOFLOW_API_KEY)
 
-# Preprocess image function
 def preprocess_image(crop_img):
     crop_img = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
     crop_img = cv2.resize(crop_img, (640, 480))
@@ -35,7 +36,6 @@ async def predict(file: UploadFile = File(...)):
     img = np.array(pil_img)
     img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
-    # Roboflow detection
     results = client.infer(img_bgr, model_id=ROBOFLOW_MODEL_ID)
     dets = sv.Detections.from_inference(results)
     dets = dets[dets.confidence > 0.95]
