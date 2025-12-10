@@ -11,14 +11,11 @@ import os
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
 
-# Initialize FastAPI app
 app = FastAPI()
 
-# ONNX model session
 providers = ["CPUExecutionProvider"]
 ort_session = ort.InferenceSession("model/final_model.onnx", providers=providers)
 
-# Roboflow setup from environment variables
 ROBOFLOW_API_KEY = os.environ.get("ROBOFLOW_API_KEY")
 ROBOFLOW_MODEL_ID = os.environ.get("ROBOFLOW_MODEL_ID")
 client = InferenceHTTPClient(
@@ -26,7 +23,6 @@ client = InferenceHTTPClient(
     api_key=ROBOFLOW_API_KEY
 )
 
-# Preprocess image for ONNX
 def preprocess_image(crop_img):
     crop_img = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
     crop_img = cv2.resize(crop_img, (640, 480))
@@ -39,13 +35,11 @@ def preprocess_image(crop_img):
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     try:
-        # Read uploaded image
         img_bytes = await file.read()
         pil_img = Image.open(BytesIO(img_bytes)).convert("RGB")
         img = np.array(pil_img)
         img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
-        # Detect keyboard using Roboflow
         results = client.infer(img_bgr, model_id=ROBOFLOW_MODEL_ID)
         dets = sv.Detections.from_inference(results)
         dets = dets[dets.confidence > 0.95]
@@ -53,7 +47,6 @@ async def predict(file: UploadFile = File(...)):
         if len(dets) == 0:
             return JSONResponse(content={"error": "No keyboard detected"}, status_code=200)
 
-        # Crop keyboard
         x1, y1, x2, y2 = dets.xyxy[0]
         h, w = img.shape[:2]
         EXTENSION_PIXELS = 50
@@ -64,7 +57,6 @@ async def predict(file: UploadFile = File(...)):
         if crop.size == 0:
             return JSONResponse(content={"error": "Detected box is empty"}, status_code=200)
 
-        # ONNX prediction
         crop_input = preprocess_image(crop)
         output = ort_session.run(None, {"input": crop_input})[0][0]
 
