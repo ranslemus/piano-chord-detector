@@ -5,7 +5,7 @@ import requests
 
 API_URL = "https://piano-chord-detector-i4pp-h8vcyq41r-reubens-projects-5f68c943.vercel.app/api/predict"
 
-st.title("🎹 Piano Keyboard + Chord Prediction")
+st.title("🎹 Piano Keyboard and Chord Prediction")
 uploaded = st.file_uploader("Upload an image", type=["jpg","jpeg","png"])
 
 if uploaded:
