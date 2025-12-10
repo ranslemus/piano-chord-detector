@@ -1,6 +1,8 @@
+fastapi
+uvicorn
 onnxruntime
 numpy
-opencv-python
+opencv-python-headless
 Pillow
-inference-sdk
 supervision
+inference_sdk
