@@ -6,3 +6,4 @@ opencv-python-headless
 Pillow
 supervision
 inference_sdk
+python-multipart

@@ -10,14 +10,28 @@ import os
 
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
+app = FastAPI(title="Piano Chord Detector API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 providers = ["CPUExecutionProvider"]
-ort_session = ort.InferenceSession("model/final_model.onnx", providers=providers)
+model_path = os.environ.get("ONNX_MODEL_PATH", "model/final_model.onnx")
+ort_session = ort.InferenceSession(model_path, providers=providers)
 
 ROBOFLOW_API_KEY = os.environ.get("ROBOFLOW_API_KEY")
 ROBOFLOW_MODEL_ID = os.environ.get("ROBOFLOW_MODEL_ID")
+
+if not ROBOFLOW_API_KEY or not ROBOFLOW_MODEL_ID:
+    raise ValueError("ROBOFLOW_API_KEY and ROBOFLOW_MODEL_ID must be set in environment variables")
+
 client = InferenceHTTPClient(
     api_url="https://serverless.roboflow.com",
     api_key=ROBOFLOW_API_KEY
@@ -47,6 +61,7 @@ async def predict(file: UploadFile = File(...)):
         if len(dets) == 0:
             return JSONResponse(content={"error": "No keyboard detected"}, status_code=200)
 
+        # Crop detected keyboard
         x1, y1, x2, y2 = dets.xyxy[0]
         h, w = img.shape[:2]
         EXTENSION_PIXELS = 50
@@ -57,6 +72,7 @@ async def predict(file: UploadFile = File(...)):
         if crop.size == 0:
             return JSONResponse(content={"error": "Detected box is empty"}, status_code=200)
 
+        # Predict chord
         crop_input = preprocess_image(crop)
         output = ort_session.run(None, {"input": crop_input})[0][0]
 
